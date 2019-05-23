@@ -1,80 +1,86 @@
-# ==================================================================
-# cellranger pipeline for paired scRNA-seq + TCR-seq (10x) analysis
+# =========================================================
+# cellranger.snakefile
+# pipeline for paired scRNA-seq + TCR-seq (10x) analysis
 # Joy Pai
 # Satpathy Lab, Stanford University
 # May 20, 2019
-# ==================================================================
+# =========================================================
 
 import glob
 import os
 
 # SET UP
-CWD = os.curdir()
+CWD = os.getcwd()
+CELLRANGER_DIR='/storage/joypai/software/cellranger-3.0.2'
 
-EXP_samples = glob.glob(CWD+"data/*-WTA")
-TCR_samples = glob.glob(CWD+"data/*-TCR")
+EXP_samples = [ s.split('/')[-1] for s in glob.glob(CWD+"/data/*-WTA") ]
+TCR_samples = [ s.split('/')[-1] for s in glob.glob(CWD+"/data/*-TCR") ]
+
+print("exp samples:", EXP_samples)
+print("tcr samples:", TCR_samples)
 
 
 # RULES
 rule all:
     input:
-        bam_files=expand('{sample}/outs/possorted_genome.bam.bam', sample=EXP_samples)
+        h5_files=expand('{sample}/outs/molecule_info.h5', sample=EXP_samples),
+        clone_files=expand('{sample}/outs/clonotypes.csv', sample=TCR_samples),
+        aggr=CWD+"/runs/MS/outs/aggregation.csv"
 
 rule count:
     input: 
-        fastq_dir='{sample}'
+        fastq_dir=CWD+'/data/{sample}'
     params:
         sample_name='{sample}',
-        ref='/storage/joypai/software/..fillin../refdata-cellranger-GRCh38-3.0.0'
-    output:
-        '{params.sample_name}/outs/possorted_genome_bam.bam'
-    log: 'cellranger_count_{params.sample_name}'
+        ref=CELLRANGER_DIR+'/refdata-cellranger-GRCh38-3.0.0'
+    output: '{sample}/outs/molecule_info.h5'
+    log: 'cellranger_count_{sample}.log'
     threads: 10
     shell:
         """
-        cellranger count --id={params.sample_name} \
-                   --transcriptome={params.ref} \
-                   --fastqs={input.fastq_dir} \
-                   --sample={params.sample_name} \
+        cellranger count --id={params.sample_name}
+                   --transcriptome={params.ref}
+                   --fastqs={input.fastq_dir}
+                   --sample={params.sample_name}
                    --localcores={threads} &> {log}
         """
 
 rule aggr:
-    input: 
-    params: 
+    input: expand("{sample}/outs/molecule_info.h5", sample=EXP_samples)
+    params:
         aggr_csv="MS_libraries.csv",
-        cur_dir=CWD
+        run_id="MS"
     output: CWD+"/runs/MS/outs/aggregation.csv"
+    log: 'cellranger_aggr.log'
+    threads: 1
     run:
-        with open({params.aggr_csv}, "w) as outf:
+        # write aggregation csv file
+        with open({params.aggr_csv}, "w") as outf:
             outf.write("library_id,molecule_h5\n")
 
             for i in input:
-                outf.write(i+",{params.cur_dir}/"+i+"/outs/molecule_info.h5\n")
+                sample = i.split('/')[0]
+                outf.write(sample+","+i+"\n")
         
         # run cellranger aggr
-        import subprocess
-
-        aggr_command = "cellranger aggr --id=MS \
-                            --csv=MS_libraries.csv \
-                            --normalize=mapped"
-
-        process = subprocess.Popen(aggr_command, stdout=subprocess.PIPE)
-        output, error = process.communicate()
+        shell("cellranger aggr --id={params.run_id} \
+                --csv={params.aggr_csv} \
+                --normalize=mapped &> {log}")
 
 rule vdj:
     input:
-        fastq_dir='{sample}'
+        fastq_dir=CWD+'/data/{sample}'
     params:
-        vdj_ref='/storage/joypai/software/..fillin.../refdata-cellranger-vdj-GRCh38-alts-ensembl-2.0.0'
-    log: 'cellranger_vdj_{params.sample_name}.log'
+        sample_name='{sample}',
+        vdj_ref=CELLRANGER_DIR+'/refdata-cellranger-vdj-GRCh38-alts-ensembl-2.0.0'
+    output: '{sample}/outs/clonotypes.csv'
+    log: 'cellranger_vdj_{sample}.log'
     threads: 10
     shell:
         """
-        cellranger vdj --id=sample345 \
+        cellranger vdj --id={params.sample_name} \
                  --reference={params.vdj_ref} \
-                 --fastqs=/home/jdoe/runs/HAWT7ADXX/outs/fastq_path \
-                 --sample=mysample \
+                 --fastqs={input.fastq_dir} \
+                 --sample={params.sample_name} \
                  --localcores={threads} &> {log}
-
         """
