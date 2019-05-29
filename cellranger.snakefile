@@ -23,26 +23,34 @@ print("tcr samples:", TCR_samples)
 # RULES
 rule all:
     input:
-        h5_files=expand('{sample}/outs/molecule_info.h5', sample=EXP_samples),
-        clone_files=expand('{sample}/outs/clonotypes.csv', sample=TCR_samples),
-        aggr=CWD+"/runs/MS/outs/aggregation.csv"
+        h5_files=expand('endpoints/{sample}_count.txt', sample=EXP_samples),
+        clone_files=expand('endpoints/{sample}_vdj.txt', sample=TCR_samples),
+        # aggr=CWD+"/runs/MS/outs/aggregation.csv"
 
 rule count:
     input: 
         fastq_dir=CWD+'/data/{sample}'
     params:
         sample_name='{sample}',
-        ref=CELLRANGER_DIR+'/refdata-cellranger-GRCh38-3.0.0'
-    output: '{sample}/outs/molecule_info.h5'
-    log: 'cellranger_count_{sample}.log'
+        ref=CELLRANGER_DIR+'/refdata-cellranger-GRCh38-3.0.0',
+        h5_file='{sample}/outs/molecule_info.h5',
+        threads=10
+    output: 'endpoints/{sample}_count.txt'
+    log: 'logs/cellranger_count_{sample}.log'
     threads: 10
+    resources:
+        mem_mb=100
     shell:
         """
-        cellranger count --id={params.sample_name}
-                   --transcriptome={params.ref}
-                   --fastqs={input.fastq_dir}
-                   --sample={params.sample_name}
-                   --localcores={threads} &> {log}
+        cellranger count --id={params.sample_name} \
+                   --transcriptome={params.ref} \
+                   --fastqs={input.fastq_dir} \
+                   --sample={params.sample_name} \
+                   --localcores={params.threads} --localmem={resources.mem_mb} &> {log}
+        
+        if [ -f "{params.h5_file}" ]; then
+            touch {output}
+        fi
         """
 
 rule aggr:
@@ -51,7 +59,7 @@ rule aggr:
         aggr_csv="MS_libraries.csv",
         run_id="MS"
     output: CWD+"/runs/MS/outs/aggregation.csv"
-    log: 'cellranger_aggr.log'
+    log: 'logs/cellranger_aggr.log'
     threads: 1
     run:
         # write aggregation csv file
@@ -72,15 +80,23 @@ rule vdj:
         fastq_dir=CWD+'/data/{sample}'
     params:
         sample_name='{sample}',
-        vdj_ref=CELLRANGER_DIR+'/refdata-cellranger-vdj-GRCh38-alts-ensembl-2.0.0'
-    output: '{sample}/outs/clonotypes.csv'
-    log: 'cellranger_vdj_{sample}.log'
+        vdj_ref=CELLRANGER_DIR+'/refdata-cellranger-vdj-GRCh38-alts-ensembl-2.0.0',
+        clone_file='{sample}/outs/clonotypes.csv',
+        threads=10
+    output: 'endpoints/{sample}_vdj.txt'
+    log: 'logs/cellranger_vdj_{sample}.log'
     threads: 10
+    resources:
+        mem_mb=100
     shell:
         """
         cellranger vdj --id={params.sample_name} \
                  --reference={params.vdj_ref} \
                  --fastqs={input.fastq_dir} \
                  --sample={params.sample_name} \
-                 --localcores={threads} &> {log}
+                 --localcores={params.threads} --localmem={resources.mem_mb} &> {log}
+        
+        if [ -f "{params.clone_file}" ]; then
+            touch {output}
+        fi
         """
