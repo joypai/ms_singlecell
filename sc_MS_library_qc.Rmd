@@ -1,0 +1,163 @@
+---
+title: "MS scTCR + RNA-seq (PBMC CD3+ cells) 10x library"
+author: "Joy Pai, Satpathy Lab"
+date: "5/30/2019"
+output:
+  html_document:
+    theme: simplex
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    number_sections: false
+---
+
+<style>
+    body .main-container {
+        max-width: 85%;
+    }
+    table {
+      white-space: nowrap;
+    }
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+setwd("~/changrila2_mount/ms_epic/")
+
+library(DT)
+library(ggplot2)
+library(ggsci)
+```
+
+*** 
+
+## sequencing metrics {.tabset .tabset-fade .tabset-pills}
+### expression (WTA) libraries
+```{r expression_summary}
+
+# retrieve metrics summary for each sample
+all_wta_dirs <- list.files(path=".", pattern="-WTA$", include.dirs = T)
+
+wta_qc_info <- data.frame()
+for (dir in all_wta_dirs) {
+  metrics <- read.csv(paste(dir,"outs","metrics_summary.csv", sep="/"), stringsAsFactors = F)
+  wta_qc_info <- rbind(wta_qc_info, metrics)
+}
+rownames(wta_qc_info) <- all_wta_dirs
+
+datatable(wta_qc_info, rownames = T, #caption = "expression (WTA) libraries",
+          extensions = 'FixedColumns',
+          options = list(pageLength = 15, scrollX='80%', fixedColumns=TRUE)) %>% 
+  formatStyle('Mean.Reads.per.Cell', target = "row",
+              backgroundColor = styleEqual("3,316", values = '#ffb2b2'))
+
+# write.table(wta_qc_info, "analyses/WTA_sequencing_metrics_summary.txt", row.names = F, quote=F, sep="\t")
+```
+
+***
+
+### TCR libraries
+```{r tcr_summary}
+
+# retrieve metrics summary for each sample
+all_tcr_dirs <- list.files(path=".", pattern="-TCR$", include.dirs = T)
+
+tcr_qc_info <- data.frame()
+for (dir in all_tcr_dirs) {
+  metrics <- read.csv(paste(dir,"outs","metrics_summary.csv", sep="/"), stringsAsFactors = F)
+  tcr_qc_info <- rbind(tcr_qc_info, metrics)
+}
+rownames(tcr_qc_info) <- all_tcr_dirs
+
+datatable(tcr_qc_info, rownames = T,
+          extensions = 'FixedColumns',
+          options = list(pageLength = 15, scrollX='80%', fixedColumns=TRUE)) 
+
+#write.table(qc_info, "analyses/TCR_sequencing_metrics_summary.txt", row.names = F, quote=F, sep="\t")
+```
+
+## preliminary TCR clonal analysis
+``` {r clone_analysis}
+clonotypes_df <- data.frame()
+for (dir in all_tcr_dirs) {
+  clonotypes <- read.csv(paste(dir,"outs","clonotypes.csv", sep="/"), stringsAsFactors = F)
+  
+  # extract TRA and TRB sequences
+  clonotypes$trb <- gsub(".*TRB:(\\w+)$", "\\1", 
+                         sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRB", x), x, NA)))
+  clonotypes$tra <- gsub("^TRA:(\\w+);*.*", "\\1", 
+                         sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRA", x), x, NA)))
+
+  clonotypes$sample <- dir
+  clonotypes_df <- rbind(clonotypes_df, clonotypes)
+}
+
+clonotypes_df$group <- ifelse(grepl("^HC",clonotypes_df$sample), "healthy", "MS")
+
+```
+
+
+``` {r clone_overlap}
+sample_ids <- unique(clonotypes_df$sample)
+trb_per_sample <- lapply(sample_ids, function(x) unique(subset(clonotypes_df, sample==x)$trb))
+names(trb_per_sample) <- sample_ids
+
+# pairwise comparison of TRB sequence overlap between samples
+cmbs <- combn(sample_ids, 2, simplify = F)
+
+trb_overlaps <- data.frame()
+for (i in cmbs) {
+  num_overlap <- length(intersect(trb_per_sample[[i[1]]], trb_per_sample[[i[2]]]))
+  trb_overlaps <- rbind(trb_overlaps, data.frame(sample1=i[1], sample2=i[2], num_overlap=num_overlap))
+}
+
+for (i in sample_ids){
+  trb_overlaps <- rbind(trb_overlaps, data.frame(sample1=i, sample2=i, num_overlap=length(trb_per_sample[[i]])))
+}
+
+trb_overlaps$sample1 <- factor(trb_overlaps$sample1, levels=sample_ids)
+trb_overlaps$sample2 <- factor(trb_overlaps$sample2, levels=sample_ids)
+
+ggplot(trb_overlaps, aes(sample1, sample2)) +
+  theme_bw() +
+  geom_tile(aes(fill = num_overlap), color='white') +
+  geom_text(aes(label = num_overlap), color="white", size=3) +
+  scale_x_discrete(position = "top") +
+  scale_fill_gradient(low = 'midnightblue', high = 'lightskyblue1', name = "number overlapping TRB clones") +
+  theme(axis.text.x=element_text(angle=90),
+        axis.title = element_blank(),
+        panel.border=element_blank(),
+        legend.position = "right")
+```
+
+
+``` {r gini_index}
+library(DescTools)
+
+# calculate gini index as measure of clonal diversity for each sample
+gini <- data.frame()
+for (i in sample_ids){
+  tmp <- subset(clonotypes_df, sample==i)
+  gini <- rbind(gini, data.frame(sample=i, gini_index=Gini(tmp$proportion)))
+}
+
+gini$group <- ifelse(grepl("^HC", gini$sample), "healthy", "MS")
+
+ggplot(gini, aes(x=group, y=gini_index, fill=group)) + geom_boxplot(alpha=0.6) + geom_point(aes(color=group)) +
+  ylab("Gini Index") + ggtitle("Gini indices per sample") +
+  theme_classic() + scale_fill_aaas()  + scale_color_aaas() +
+  theme(plot.title = element_text(hjus?pt=0.5))
+
+```
+
+``` {r clonal_expansion, include=FALSE}
+clonotypes_df$proportion_log10 <- log10(clonotypes_df$proportion)
+# ggplot(clonotypes_df, aes(x=proportion)) + geom_histogram(binwidth = 0.1) + facet_wrap(~sample)
+ggplot(clonotypes_df, aes(x=group, y=proportion_log10, color=group)) + 
+  ylab("clone frequency") +
+  # coord_cartesian(ylim=c(0, 0.3)) +
+  # scale_y_log10() + 
+  geom_boxplot(alpha=0.5) + 
+  theme_bw() + scale_color_npg()
+```

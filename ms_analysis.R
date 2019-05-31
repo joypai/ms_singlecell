@@ -27,8 +27,8 @@ for (dir in all_sample_dirs) {
 immune.anchors <- FindIntegrationAnchors(object.list = seurat_obj_list, dims = 1:20)
 merged.integrated <- IntegrateData(anchorset = immune.anchors, dims = 1:20)
 
-save(immune.anchors, file="immune.anchors.RData")
-save(seurat_obj_list, file="seurat_obj_list.RData")
+save(immune.anchors, file="r_objects/immune.anchors.RData")
+save(seurat_obj_list, file="r_objects/seurat_obj_list.RData")
 
 
 # merged <- merge(seurat_obj_list[[1]], y = seurat_obj_list[2:length(seurat_obj_list)],
