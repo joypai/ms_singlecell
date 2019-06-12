@@ -22,12 +22,14 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.width=12) 
 
 setwd("~/changrila2_mount/ms_epic/")
 
 library(DT)
 library(ggplot2)
 library(ggsci)
+library(dplyr)
 ```
 
 *** 
@@ -81,14 +83,46 @@ datatable(tcr_qc_info, rownames = T,
 ``` {r clone_analysis}
 clonotypes_df <- data.frame()
 for (dir in all_tcr_dirs) {
+  print(dir)
   clonotypes <- read.csv(paste(dir,"outs","clonotypes.csv", sep="/"), stringsAsFactors = F)
-  
-  # extract TRA and TRB sequences
-  clonotypes$trb <- gsub(".*TRB:(\\w+)$", "\\1", 
-                         sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRB", x), x, NA)))
-  clonotypes$tra <- gsub("^TRA:(\\w+);*.*", "\\1", 
-                         sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRA", x), x, NA)))
+  clonotype_annot <- read.csv(paste(dir,"outs","consensus_annotations.csv", sep="/"), stringsAsFactors = F)
 
+  # # extract TRA and TRB sequences
+  # clonotypes$trb <- gsub(".*TRB:(\\w+)$", "\\1", 
+  #                        sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRB", x), x, NA)))
+  # clonotypes$tra <- gsub("^TRA:(\\w+);*.*", "\\1", 
+  #                        sapply(clonotypes$cdr3s_aa, function(x) ifelse(grepl("TRA", x), x, NA)))
+
+  # append annot columns with gene usage
+  annots <- lapply(clonotypes$clonotype_id, 
+         function(c) {
+           c_annot <- subset(clonotype_annot, clonotype_id == c)
+           
+           clone_annot_list = list()
+           for (i in 1:nrow(c_annot)) {
+             chain <- c_annot[i,4]
+             chain_annot <- c_annot[i,5:12]
+             names(chain_annot) <- paste(chain, colnames(c_annot)[5:12], sep="_")
+             if (!chain %in% names(clone_annot_list)) {
+               clone_annot_list[[chain]] <- chain_annot
+             }
+           }
+           if (!"TRA" %in% names(clone_annot_list)) {
+             clone_annot_list[["TRA"]] <- NA
+           }
+           if (!"TRB" %in% names(clone_annot_list)) {
+             clone_annot_list[["TRB"]] <- NA
+           }
+           cbind(clone_annot_list[["TRA"]], clone_annot_list[["TRB"]])
+          }
+         )
+  names(annots) <- clonotypes$clonotype_id
+  tr_annots <- bind_rows(annots)
+  # head(tr_annots)
+  # clonotypes <- cbind(clonotypes, tr_annots[,1:(ncol(tr_annots)-2)])
+  clonotypes <- cbind(clonotypes, select(tr_annots, -starts_with("clone_annot")))
+  
+  # add to all-sample clonotypes df
   clonotypes$sample <- dir
   clonotypes_df <- rbind(clonotypes_df, clonotypes)
 }
@@ -97,10 +131,76 @@ clonotypes_df$group <- ifelse(grepl("^HC",clonotypes_df$sample), "healthy", "MS"
 
 ```
 
+``` {r gene_usage}
+# per patient ----
+# TRA V gene
+tra_v_df <- aggregate(proportion~TRA_v_gene+sample+group, clonotypes_df, sum)
+
+ggplot(tra_v_df, aes(x=TRA_v_gene, y=proportion, fill=group)) + geom_bar(stat="identity") +
+  facet_wrap(~sample, ncol=4) + theme_bw() + scale_fill_aaas() +
+  ggtitle("TRA V gene usage") +
+  theme(text = element_text(size=24),
+        axis.text.x = element_text(angle=90, vjust=0.5, size=8),
+        plot.title = element_text(hjust=0.5),
+        legend.position = "bottom")
+
+# TRB V gene
+trb_v_df <- aggregate(proportion~TRB_v_gene+sample+group, clonotypes_df, sum)
+
+ggplot(trb_v_df, aes(x=TRB_v_gene, y=proportion, fill=group)) + geom_bar(stat="identity") +
+  facet_wrap(~sample, ncol=4) + theme_bw() + scale_fill_aaas() +
+  ggtitle("TRB V gene usage") +
+  theme(text = element_text(size=24),
+        axis.text.x = element_text(angle=90, vjust=0.5, size=8),
+        plot.title = element_text(hjust=0.5),
+        legend.position = "bottom")
+
+
+# all patients combined ----
+# TRA V gene
+tra_v_df <- aggregate(proportion~TRA_v_gene+group, clonotypes_df, sum)
+healthy_total_prop <- sum(subset(tra_v_df, group=="healthy")$proportion)
+ms_total_prop <- sum(subset(tra_v_df, group=="MS")$proportion)
+
+tra_v_df$proportion_normalized <- ifelse(tra_v_df$group=="healthy", tra_v_df$proportion/healthy_total_prop, 
+                                         tra_v_df$proportion/ms_total_prop)
+
+ggplot(tra_v_df, aes(x=TRA_v_gene, y=proportion_normalized, fill=group)) + 
+  geom_bar(stat="identity", position = position_dodge()) +
+  theme_bw() + scale_fill_aaas() + #coord_cartesian(ylim=c(0,0.8), expand=F) +
+  ggtitle("TRA V gene usage") +
+  theme(text = element_text(size=24), legend.position = "bottom",
+        axis.text.x = element_text(angle=75, vjust=0.5, size=14),
+        plot.title = element_text(hjust=0.5))
+
+# TRB V gene
+trb_v_df <- aggregate(proportion~TRB_v_gene+group, clonotypes_df, sum)
+healthy_total_prop <- sum(subset(trb_v_df, group=="healthy")$proportion)
+ms_total_prop <- sum(subset(trb_v_df, group=="MS")$proportion)
+
+trb_v_df$proportion_normalized <- ifelse(trb_v_df$group=="healthy", trb_v_df$proportion/healthy_total_prop, 
+                                         trb_v_df$proportion/ms_total_prop)
+
+ggplot(trb_v_df, aes(x=TRB_v_gene, y=proportion_normalized, fill=group)) + 
+  geom_bar(stat="identity", position = position_dodge()) +
+  theme_bw() + scale_fill_aaas() + #coord_cartesian(ylim=c(0,0.6), expand=F) +
+  ggtitle("TRB V gene usage") +
+  theme(text = element_text(size=24), legend.position = "bottom",
+        axis.text.x = element_text(angle=75, vjust=0.5, size=14),
+        plot.title = element_text(hjust=0.5))
+
+```
+
+
+
 
 ``` {r clone_overlap}
 sample_ids <- unique(clonotypes_df$sample)
-trb_per_sample <- lapply(sample_ids, function(x) unique(subset(clonotypes_df, sample==x)$trb))
+groupby_cdr3 = "TRA_cdr3"
+trb_per_sample <- lapply(sample_ids, 
+                         function(x) unique(subset(clonotypes_df, sample==x & frequency>1)[[groupby_cdr3]])) # only expanded clones
+# trb_per_sample <- lapply(sample_ids, function(x) unique(subset(clonotypes_df, sample==x)$TRB_cdr3)) # all clones, including singlets
+
 names(trb_per_sample) <- sample_ids
 
 # pairwise comparison of TRB sequence overlap between samples
@@ -108,7 +208,7 @@ cmbs <- combn(sample_ids, 2, simplify = F)
 
 trb_overlaps <- data.frame()
 for (i in cmbs) {
-  num_overlap <- length(intersect(trb_per_sample[[i[1]]], trb_per_sample[[i[2]]]))
+  num_overlap <- length(na.omit(intersect(trb_per_sample[[i[1]]], trb_per_sample[[i[2]]])))
   trb_overlaps <- rbind(trb_overlaps, data.frame(sample1=i[1], sample2=i[2], num_overlap=num_overlap))
 }
 
@@ -147,8 +247,62 @@ gini$group <- ifelse(grepl("^HC", gini$sample), "healthy", "MS")
 ggplot(gini, aes(x=group, y=gini_index, fill=group)) + geom_boxplot(alpha=0.6) + geom_point(aes(color=group)) +
   ylab("Gini Index") + ggtitle("Gini indices per sample") +
   theme_classic() + scale_fill_aaas()  + scale_color_aaas() +
-  theme(plot.title = element_text(hjus?pt=0.5))
+  theme(plot.title = element_text(hjust=0.5))
 
+```
+
+
+``` {r clone_pie}
+
+clone_data_all <- data.frame()
+for (i in sample_ids){
+  tmp <- subset(clonotypes_df, sample==i)
+  singles <- subset(tmp, frequency == 1)
+  single_data <- data.frame(clonotype_id="singles", frequency=nrow(singles),
+                            proportion=singles$proportion[1]*nrow(singles),
+                            cdr3s_aa=NA, cdr3s_nt=NA, trb=NA, tra=NA,
+                            sample=tmp$sample[1], group=tmp$group[1])
+  clone_data <- subset(tmp, frequency != 1)
+  clone_data <- rbind(clone_data, single_data)
+
+  # Add addition columns, needed for drawing with geom_rect.
+  clone_data$fraction = clone_data$frequency / sum(clone_data$frequency)
+  clone_data$ymax = cumsum(clone_data$fraction)
+  clone_data$ymin = c(0, head(clone_data$ymax, n=-1))
+  
+  clone_data$size <- sapply(clone_data$frequency, function(x) ifelse(x>=50, ">=50", 
+                                                                     ifelse(x>=20, ">=20",
+                                                                            ifelse(x>=10, ">=10",
+                                                                                   ifelse(x>=5, ">=5",">=2")))))
+  clone_data[clone_data$clonotype_id=="singles","size"] = 'singles'
+  
+  clone_data_all <- rbind(clone_data_all, clone_data)
+}
+
+# Make the plot
+size_groupings <- c("singles",">=2",">=5",">=10",">=20",">=50")
+colpal <- c("grey", pal_lancet()(5))
+names(colpal) <- size_groupings
+clone_data_all$size <- factor(clone_data_all$size, levels=size_groupings)
+
+total_n <- aggregate(frequency ~ sample, data=clone_data_all, sum)
+total_n$x <- 0
+total_n$y <- 0
+
+p1 <- ggplot(clone_data_all) +
+  geom_rect(aes(fill=size, ymax=ymax, ymin=ymin, xmax=4, xmin=2)) + 
+  scale_fill_manual(values=colpal, name="clone size") +
+  facet_wrap(~sample, ncol=8) + guides(fill = guide_legend(nrow = 1)) +
+  coord_polar(theta="y") + xlim(c(0, 4)) + theme_bw() +
+  theme(panel.grid=element_blank(),
+        plot.title = element_text(hjust=0.5),
+        axis.title = element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        legend.position = "bottom") +
+  geom_text(data=total_n, aes(x=x, y=y, label=frequency)) + ggtitle("clonal expansion")
+
+p1
 ```
 
 ``` {r clonal_expansion, include=FALSE}
