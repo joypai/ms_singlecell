@@ -1,6 +1,6 @@
 # ms_singlecell
 
-cellranger.snakefile: pipeline for 10x single-cell paired RNA + TCR analysis
+cellranger.snakefile: pipeline for processing 10x single-cell paired RNA + TCR data
 
 smartseq_analysis/smartseq.snakefile: pipeline for alignment and quantification of SMART-seq2 scRNA-seq data
 
