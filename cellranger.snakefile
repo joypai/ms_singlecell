@@ -34,10 +34,10 @@ rule count:
         sample_name='{sample}',
         ref=CELLRANGER_DIR+'/refdata-cellranger-GRCh38-3.0.0',
         h5_file='{sample}/outs/molecule_info.h5',
-        threads=10
+        threads=20
     output: 'endpoints/{sample}_count.txt'
     log: 'logs/cellranger_count_{sample}.log'
-    threads: 10
+    threads: 20
     resources:
         mem_mb=100
     shell:
