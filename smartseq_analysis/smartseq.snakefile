@@ -11,12 +11,15 @@ import os
 
 # SET UP
 CWD = os.getcwd()
+
 RSEM='/seq/RSEM-1.3.0/' 			# path to RSEM 
-STAR='/seq/STAR-2.5.2b/bin/Linux_x86_64/STAR'	# path to STAR
+STAR='/seq/STAR-2.5.2b/bin/Linux_x86_64/'	# path to STAR
+FASTQC='/seq/fastqc-11.2/FastQC/fastqc'		# path to STAR
+
+HUMAN_REF_FASTA='/seq/genomes/hg38/hg38.fa'
+HUMAN_REF_GTF='/seq/genomes/hg38/hg38.gtf'
 
 SAMPLES = [ s.split('/')[-1].split('_R1')[0] for s in glob.glob(CWD+"/*/*_R1_001.fastq.gz") ]
-# print(SAMPLES[:3])
-
 #L003_SAMPLES = [ s.split('/')[-1].split('_R1')[0] for s in glob.glob(CWD+"/*/*L003_R1_001.fastq.gz") ]
 
 
@@ -31,7 +34,7 @@ rule fastqc:
         fastq_r1=CWD+'/data/{sample}_R1_001.fastq.gz',
         fastq_r2=CWD+'/data/{sample}_R2_001.fastq.gz'
     params:
-        fastqc='/seq/fastqc-11.2/FastQC/fastqc',
+        fastqc=FastQC,
         outdir=CWD+'/fastqc'
     output: 
         CWD+'/fastqc/{sample}_R1_001_fastqc.html'
@@ -43,11 +46,11 @@ rule fastqc:
 
 rule build_ref:
     input: 
-        fasta='/seq/genomes/hg38/hg38.fa'
+        fasta=HUMAN_REF_FASTA
     params:
-        gtf='/seq/genomes/hg38/hg38.gtf',
-        rsem='/seq/RSEM-1.3.0',
-        star='/seq/STAR-2.5.2b/bin/Linux_x86_64/',
+        gtf=HUMAN_REF_GTF
+        rsem=RSEM,
+        star=STAR,
         refname='ref/hg38',
         threads=40,
     output: 'ref/hg38.idx.fa'
@@ -69,9 +72,8 @@ rule quant:
         fastq_r2=CWD+'/data/{sample}_R2_001.fastq.gz',
     params:
         ref=CWD+'/ref/hg38',
-        #ref='/seq/STAR-2.5.2b/index/hg38_rsem/Homo_sapiens_hg38',
-        rsem='/seq/RSEM-1.3.0',
-        star='/seq/STAR-2.5.2b/bin/Linux_x86_64/',
+        rsem=RSEM,
+        star=STAR,
         prefix='rsem/{sample}',
         threads=10,
     output: 'rsem/{sample}.genes.results'
