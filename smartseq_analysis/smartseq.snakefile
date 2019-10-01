@@ -17,15 +17,14 @@ STAR='/seq/STAR-2.5.2b/bin/Linux_x86_64/STAR'	# path to STAR
 SAMPLES = [ s.split('/')[-1].split('_R1')[0] for s in glob.glob(CWD+"/*/*_R1_001.fastq.gz") ]
 # print(SAMPLES[:3])
 
-L003_SAMPLES = [ s.split('/')[-1].split('_R1')[0] for s in glob.glob(CWD+"/*/*L003_R1_001.fastq.gz") ]
+#L003_SAMPLES = [ s.split('/')[-1].split('_R1')[0] for s in glob.glob(CWD+"/*/*L003_R1_001.fastq.gz") ]
 
 
 # RULES
 rule all:
     input:
-        #'ref/hg38.idx.fa',
         rsem_files=expand('rsem/{sample}.genes.results', sample=SAMPLES),
-        fastqc_files=expand(CWD+'/fastqc/{sample}_R1_001_fastq.html', sample=L003_SAMPLES)
+        #fastqc_files=expand(CWD+'/fastqc/{sample}_R1_001_fastqc.html', sample=SAMPLES)
 
 rule fastqc:
     input:
